@@ -1,14 +1,14 @@
 # Use official Node.js image as a base image
-FROM node:16
+FROM node:24
 
 # Set the working directory inside the container
 WORKDIR /usr/src/app
 
 # Copy package.json and package-lock.json to install dependencies first
-COPY package*.json ./
+COPY package.json package-lock.json ./
 
 # Install dependencies
-RUN npm install
+RUN npm install --production
 
 # Copy the rest of the application code
 COPY . .

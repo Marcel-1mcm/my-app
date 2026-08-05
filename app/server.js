@@ -33,7 +33,6 @@ connectToMongo();
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'profile.html'));
 });
-
 // Fetch profile data, handle case where the database is not available
 app.get('/get-profile', async (req, res) => {
   if (!usersCollection) {

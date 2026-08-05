@@ -1,0 +1,39 @@
+services:
+  app:
+    image: 559896293698.dkr.ecr.eu-west-2.amazonaws.com/my-app:latest
+    container_name: my-app
+    restart: unless-stopped
+    depends_on:
+      - mongodb
+    ports:
+      - "3000:3000"
+    environment:
+      MONGO_URI: "mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongodb:27017/"
+
+  mongodb:
+    image: mongo:latest
+    container_name: mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
+    volumes:
+      - mongo-data:/data/db
+
+  mongo-express:
+    image: mongo-express:latest
+    container_name: mongo-express
+    restart: unless-stopped
+    depends_on:
+      - mongodb
+    ports:
+      - "8081:8081"
+    environment:
+      ME_CONFIG_MONGODB_URL: "mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongodb:27017/"
+      ME_CONFIG_BASICAUTH_USERNAME: admin
+      ME_CONFIG_BASICAUTH_PASSWORD: password
+
+volumes:
+  mongo-data:
