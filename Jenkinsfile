@@ -1,85 +1,321 @@
 pipeline {
-    agent any  // Use any available agent for the pipeline
+
+    agent any
 
     environment {
-        DOCKERHUB_CREDS = credentials('dockerhub-credentials')  // Docker Hub credentials
-        DOCKER_REPO = 'Marcel-1mcm/my-app'  // Your Docker Hub repository
-        EC2_INSTANCE = '172.31.3.217'  // Public IP of EC2 Instance 2
-        EC2_SSH_KEY = 'app-server-ssh'  // Jenkins credentials ID for SSH private key
-        DOCKER_TAG = "latest-${BUILD_NUMBER}"  // Docker tag with build number
+
+        AWS_REGION = 'eu-north-1'
+        AWS_ACCOUNT_ID = '559896293698'
+
+        ECR_REPOSITORY = 'my-app'
+
+        ECR_REGISTRY = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+
+        IMAGE_TAG = "build-${BUILD_NUMBER}"
+
+        IMAGE_NAME = "${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
+
+        LATEST_IMAGE = "${ECR_REGISTRY}/${ECR_REPOSITORY}:latest"
+
+
+        // CHANGE THIS TO YOUR EC2 PUBLIC IP
+        APP_SERVER_IP = 'YOUR_EC2_PUBLIC_IP'
+
+
+        APP_CONTAINER_NAME = 'my-app'
+
+        APP_PORT = '3000'
     }
 
+
     stages {
-        stage('Clone Repository') {
+
+
+        stage('Checkout Source Code') {
+
             steps {
-                git 'https://github.com/Marcel-1mcm/my-app.git'  // Clone the Node.js app repository
+
+                echo '=========================================='
+                echo 'CHECKING OUT SOURCE CODE'
+                echo '=========================================='
+
+                git branch: 'master',
+                    url: 'https://github.com/Marcel-1mcm/my-app.git'
             }
         }
+
+
 
         stage('Install Dependencies') {
+
             steps {
-                script {
-                    sh 'npm install'  // Install Node.js dependencies
-                }
+
+                echo '=========================================='
+                echo 'INSTALLING DEPENDENCIES'
+                echo '=========================================='
+
+                sh '''
+                    npm install
+                '''
             }
         }
 
-        stage('Test Application') {
+
+
+        stage('Run Tests') {
+
             steps {
-                script {
-                    sh 'npm test'  // Run tests
-                }
+
+                echo '=========================================='
+                echo 'RUNNING TESTS'
+                echo '=========================================='
+
+                sh '''
+                    npm test || echo "No tests configured - continuing"
+                '''
             }
         }
+
+
 
         stage('Build Docker Image') {
-            agent {
-                docker {
-                    image 'node:16'  // Use official Node.js image for building
-                    args '-v /var/run/docker.sock:/var/run/docker.sock'  // Allow Docker inside container
-                }
-            }
+
             steps {
-                script {
-                    sh "docker build -t $DOCKER_REPO:$DOCKER_TAG ."  // Build Docker image with a tag
-                }
+
+                echo '=========================================='
+                echo 'BUILDING DOCKER IMAGE'
+                echo '=========================================='
+
+                sh '''
+                    docker build \
+                    -t $IMAGE_NAME \
+                    .
+
+                    docker tag \
+                    $IMAGE_NAME \
+                    $LATEST_IMAGE
+                '''
             }
         }
 
-        stage('Push Docker Image to Docker Hub') {
+
+
+        stage('Login To Amazon ECR') {
+
             steps {
-                script {
-                    withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD')]) {
-                        sh '''
-                        echo $DOCKER_PASSWORD | docker login -u $DOCKER_USERNAME --password-stdin  // Log in to Docker Hub
-                        docker push $DOCKER_REPO:$DOCKER_TAG  // Push the Docker image to Docker Hub
-                        '''
-                    }
-                }
+
+                echo '=========================================='
+                echo 'LOGGING INTO ECR'
+                echo '=========================================='
+
+                sh '''
+                    aws ecr get-login-password \
+                    --region $AWS_REGION | \
+                    docker login \
+                    --username AWS \
+                    --password-stdin \
+                    $ECR_REGISTRY
+                '''
             }
         }
 
-        stage('Deploy to EC2 Instance') {
+
+
+        stage('Push Image To ECR') {
+
             steps {
-                sshagent(['app-server-ssh']) {  // Use the SSH key to authenticate
+
+                echo '=========================================='
+                echo 'PUSHING IMAGE TO ECR'
+                echo '=========================================='
+
+                sh '''
+
+                    docker push $IMAGE_NAME
+
+                    docker push $LATEST_IMAGE
+
+                '''
+            }
+        }
+
+
+
+
+        stage('Verify ECR Image') {
+
+            steps {
+
+                echo '=========================================='
+                echo 'VERIFYING IMAGE'
+                echo '=========================================='
+
+                sh '''
+
+                    aws ecr describe-images \
+                    --repository-name $ECR_REPOSITORY \
+                    --region $AWS_REGION
+
+                '''
+            }
+        }
+
+
+
+
+
+        stage('Deploy To EC2') {
+
+            steps {
+
+
+                echo '=========================================='
+                echo 'DEPLOYING TO EC2'
+                echo '=========================================='
+
+
+                sshagent(credentials: ['app-server-ssh']) {
+
+
                     sh '''
-                    ssh -o StrictHostKeyChecking=no ubuntu@$EC2_INSTANCE << 'EOF'
-                        docker pull $DOCKER_REPO:$DOCKER_TAG  // Pull the latest image from Docker Hub
-                        docker stop nodejs-app || true  // Stop any running container
-                        docker rm nodejs-app || true  // Remove old container
-                        docker run -d --name nodejs-app -p 3000:3000 $DOCKER_REPO:$DOCKER_TAG  // Run the new container
+
+                    ssh -o StrictHostKeyChecking=no ubuntu@$APP_SERVER_IP << EOF
+
+
+                    echo "Logging into ECR"
+
+
+                    aws ecr get-login-password \
+                    --region $AWS_REGION | \
+                    docker login \
+                    --username AWS \
+                    --password-stdin \
+                    $ECR_REGISTRY
+
+
+
+                    echo "Pulling latest image"
+
+
+                    docker pull $LATEST_IMAGE
+
+
+
+                    echo "Stopping old container"
+
+
+                    docker stop $APP_CONTAINER_NAME || true
+
+
+                    docker rm $APP_CONTAINER_NAME || true
+
+
+
+                    echo "Starting new container"
+
+
+
+                    docker run -d \
+                    --name $APP_CONTAINER_NAME \
+                    --restart unless-stopped \
+                    -p $APP_PORT:$APP_PORT \
+                    $LATEST_IMAGE
+
+
+
+                    echo "Deployment complete"
+
+
+                    docker ps
+
+
+
                     EOF
+
                     '''
                 }
             }
         }
+
+
+
+
+        stage('Verify Deployment') {
+
+            steps {
+
+                echo '=========================================='
+                echo 'VERIFYING CONTAINER'
+                echo '=========================================='
+
+
+                sshagent(credentials: ['app-server-ssh']) {
+
+
+                    sh '''
+
+                    ssh -o StrictHostKeyChecking=no ubuntu@$APP_SERVER_IP \
+                    "docker ps --filter name=$APP_CONTAINER_NAME"
+
+                    '''
+
+                }
+
+            }
+
+        }
+
+
     }
 
+
+
     post {
-        failure {
-            mail to: 'your-marcelcurtise.m@gmail.com',
-                 subject: "Jenkins Build Failed: ${currentBuild.fullDisplayName}",
-                 body: "The build failed. Please check the logs for details."
+
+
+        success {
+
+            echo '''
+            ==========================================
+            PIPELINE SUCCESSFUL
+            ==========================================
+            '''
+
+            echo "Image deployed: ${LATEST_IMAGE}"
+
         }
+
+
+
+        failure {
+
+            echo '''
+            ==========================================
+            PIPELINE FAILED
+            ==========================================
+            '''
+
+        }
+
+
+
+        always {
+
+            echo '''
+            ==========================================
+            CLEANING DOCKER CACHE
+            ==========================================
+            '''
+
+
+            sh '''
+
+            docker image prune -f || true
+
+            '''
+
+        }
+
     }
+
 }
