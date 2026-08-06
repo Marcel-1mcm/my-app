@@ -1,6 +1,6 @@
 services:
   app:
-    image: 559896293698.dkr.ecr.eu-west-2.amazonaws.com/my-app:latest
+    image: 559896293698.dkr.ecr.eu-north-1.amazonaws.com/my-app:latest
     container_name: my-app
     restart: unless-stopped
     depends_on:
