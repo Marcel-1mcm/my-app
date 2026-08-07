@@ -19,7 +19,7 @@ pipeline {
 
 
         // CHANGE THIS TO YOUR EC2 PUBLIC IP
-        APP_SERVER_IP = 'YOUR_EC2_PUBLIC_IP'
+        APP_SERVER_IP = '172.31.6.87'
 
 
         APP_CONTAINER_NAME = 'my-app'
