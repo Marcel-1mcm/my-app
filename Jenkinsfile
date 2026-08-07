@@ -164,158 +164,44 @@ pipeline {
 
 
 
-        stage('Deploy To EC2') {
+       stage('Deploy To EC2') {
 
-            steps {
+    steps {
 
+        echo '=========================================='
+        echo 'DEPLOYING TO EC2'
+        echo '=========================================='
 
-                echo '=========================================='
-                echo 'DEPLOYING TO EC2'
-                echo '=========================================='
+        sshagent(credentials: ['app-server-ssh']) {
 
+            sh """
+ssh -o StrictHostKeyChecking=no ubuntu@${APP_SERVER_IP} '
+echo "Logging into ECR"
 
-                sshagent(credentials: ['app-server-ssh']) {
+aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}
 
+echo "Pulling latest image"
 
-                    sh '''
+docker pull ${LATEST_IMAGE}
 
-                    ssh -o StrictHostKeyChecking=no ubuntu@$APP_SERVER_IP << EOF
+echo "Stopping old container"
 
+docker stop ${APP_CONTAINER_NAME} || true
+docker rm ${APP_CONTAINER_NAME} || true
 
-                    echo "Logging into ECR"
+echo "Starting new container"
 
+docker run -d \
+  --name ${APP_CONTAINER_NAME} \
+  --restart unless-stopped \
+  -p ${APP_PORT}:${APP_PORT} \
+  ${LATEST_IMAGE}
 
-                    aws ecr get-login-password \
-                    --region $AWS_REGION | \
-                    docker login \
-                    --username AWS \
-                    --password-stdin \
-                    $ECR_REGISTRY
+echo "Deployment complete"
 
-
-
-                    echo "Pulling latest image"
-
-
-                    docker pull $LATEST_IMAGE
-
-
-
-                    echo "Stopping old container"
-
-
-                    docker stop $APP_CONTAINER_NAME || true
-
-
-                    docker rm $APP_CONTAINER_NAME || true
-
-
-
-                    echo "Starting new container"
-
-
-
-                    docker run -d \
-                    --name $APP_CONTAINER_NAME \
-                    --restart unless-stopped \
-                    -p $APP_PORT:$APP_PORT \
-                    $LATEST_IMAGE
-
-
-
-                    echo "Deployment complete"
-
-
-                    docker ps
-
-
-
-                    EOF
-
-                    '''
-                }
-            }
+docker ps
+'
+"""
         }
-
-
-
-
-        stage('Verify Deployment') {
-
-            steps {
-
-                echo '=========================================='
-                echo 'VERIFYING CONTAINER'
-                echo '=========================================='
-
-
-                sshagent(credentials: ['app-server-ssh']) {
-
-
-                    sh '''
-
-                    ssh -o StrictHostKeyChecking=no ubuntu@$APP_SERVER_IP \
-                    "docker ps --filter name=$APP_CONTAINER_NAME"
-
-                    '''
-
-                }
-
-            }
-
-        }
-
-
     }
-
-
-
-    post {
-
-
-        success {
-
-            echo '''
-            ==========================================
-            PIPELINE SUCCESSFUL
-            ==========================================
-            '''
-
-            echo "Image deployed: ${LATEST_IMAGE}"
-
-        }
-
-
-
-        failure {
-
-            echo '''
-            ==========================================
-            PIPELINE FAILED
-            ==========================================
-            '''
-
-        }
-
-
-
-        always {
-
-            echo '''
-            ==========================================
-            CLEANING DOCKER CACHE
-            ==========================================
-            '''
-
-
-            sh '''
-
-            docker image prune -f || true
-
-            '''
-
-        }
-
-    }
-
 }
