@@ -202,6 +202,74 @@ echo "Deployment complete"
 docker ps
 '
 """
+                }
+            }
         }
+
+
+        stage('Verify Deployment') {
+
+            steps {
+
+                echo '=========================================='
+                echo 'VERIFYING CONTAINER'
+                echo '=========================================='
+
+
+                sshagent(credentials: ['app-server-ssh']) {
+
+                    sh """
+                    ssh -o StrictHostKeyChecking=no ubuntu@${APP_SERVER_IP} \
+                    "docker ps --filter name=${APP_CONTAINER_NAME}"
+                    """
+
+                }
+            }
+        }
+
     }
+
+
+    post {
+
+        success {
+
+            echo '''
+==========================================
+PIPELINE SUCCESSFUL
+==========================================
+'''
+
+            echo "Image deployed: ${LATEST_IMAGE}"
+
+        }
+
+
+        failure {
+
+            echo '''
+==========================================
+PIPELINE FAILED
+==========================================
+'''
+
+        }
+
+
+        always {
+
+            echo '''
+==========================================
+CLEANING DOCKER CACHE
+==========================================
+'''
+
+            sh '''
+                docker image prune -f || true
+            '''
+
+        }
+
+    }
+
 }
